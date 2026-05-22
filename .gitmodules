@@ -1,6 +1,6 @@
 [submodule "rl_envs"]
 	path = rl_envs
-	url = https://github.com/zhikangSu/rl_envs--SO101.git
+	url = git@github.com:zhikangSu/rl_envs--SO101.git
 [submodule "lerobot"]
 	path = lerobot
 	url = https://github.com/nuomizai/lerobot.git
