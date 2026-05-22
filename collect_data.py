@@ -440,9 +440,13 @@ def main(env_cfg):
     elif "ur" in env_cfg.robot_config.robot_type:
         lerobot_config_path = "../../cfg/train_config_collect_data.json"
     elif "tienkung" in env_cfg.robot_config.robot_type:
-        lerobot_config_path = "../../cfg/train_config_collect_data_tienkung.json" 
+        lerobot_config_path = "../../cfg/train_config_collect_data_tienkung.json"
+    elif "so101" in env_cfg.robot_config.robot_type:
+        # SO101 reuses the generic collect_data JSON — only cfg.dataset + cfg.mode are consumed
+        # downstream; cfg.env.* is dead weight because env is already built via make_env(env_cfg).
+        lerobot_config_path = "../../cfg/train_config_collect_data.json"
     else:
-        raise ValueError(f"Invalid robot type: {env_cfg.robot_type}")
+        raise ValueError(f"Invalid robot type: {env_cfg.robot_config.robot_type}")
 
     with draccus.config_type("json"):
         cfg = draccus.parse(GymManipulatorConfig, lerobot_config_path, args=[f"--dataset.task={env_cfg.task_name}"])
