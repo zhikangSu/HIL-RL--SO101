@@ -69,6 +69,13 @@ robot_config:
   # Mirrors SmolVLA deployment max_relative_target. 5 arm joints + 1 gripper.
   max_relative_target: [3.0, 3.0, 3.0, 3.0, 3.0, 5.0]
 
+  # Policy action unnormalize bounds: SAC tanh squash outputs [-1, 1], we map to physical
+  # joint degree range. Derived from cube_103ep dataset min/max with ±2° safety buffer.
+  # SO101Station._extract_command applies the linear map per-call.
+  # cube_103ep range: min=[-33.8, -104.2, -34.5, 43.5, -43.3], max=[63.2, 42.4, 96.7, 96.4, 62.6]
+  so101_joint_action_min: [-36.0, -107.0, -37.0, 41.0, -46.0]
+  so101_joint_action_max: [66.0, 45.0, 99.0, 99.0, 65.0]
+
   # No random init in joint mode (random_xy/rz only used in EE-delta mode).
   random_reset: false
   random_xy_range: 0.0
