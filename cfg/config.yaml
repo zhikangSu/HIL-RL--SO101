@@ -17,13 +17,17 @@ use_force: false
 load_classifier: true
 
 # add config for spacemouse intervention
-intervention_backend: xtele # xtele or spacemouse
+intervention_backend: xtele # xtele or spacemouse or leader_so101
 spacemouse_deadzone: 0.2
 spacemouse_axis_deadzone: 0.2
 spacemouse_enable_gripper: true
 spacemouse_translation_scale: 1
 spacemouse_rotation_scale: 1
 spacemouse_axis_signs: [1.0, -1.0, -1.0, 1.0, -1.0, -1.0]
+
+# SO101 leader-arm intervention (joint mode, position-mirror)
+leader_so101_error_threshold_deg: 8.0
+leader_so101_gripper_binary_threshold_pct: 15.0
 
 
 hydra:

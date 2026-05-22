@@ -1,0 +1,84 @@
+robot_config:
+  robot_type: so101
+  hz: 15
+  # SO101 has 5 arm joints (sts3215 motors in degrees) + 1 gripper (sts3215 in RANGE_0_100 stroke %).
+  # In base_env, joint_dim = arm joint count, gripper_dim = gripper motor count.
+  # action_space dim = joint_dim + gripper_dim = 6 (5 continuous joints + 1 binary gripper).
+  joint_dim: 5
+  gripper_dim: 1
+  dual_arm: false
+  use_cmd_pose: false
+
+  # SO101 cameras: fixed (table-mounted) + wrist
+  # No crop — original 640x480 (fixed) / 480x640 (wrist) gets resized directly to 128x128.
+  image_crop: {}
+  image_keys: ["fixed", "wrist"]
+  image_resize:
+    "fixed": [128, 128, 3]
+    "wrist": [128, 128, 3]
+  bgr2rgb: false   # lerobot SOFollower already returns RGB
+
+  # action_scale only used by EE-delta (control_mode=pose). joint mode uses _send_joint_command directly,
+  # but field must be present. Dummy values.
+  action_scale: [1.0, 1.0, 1.0]
+
+  # SO101 follower uses lerobot.SOFollower (Feetech bus over USB). 5 joint motors in degrees +
+  # 1 gripper motor in 0-100 stroke percent. Task yaml must override control_mode=joint
+  # (config.yaml defaults to "pose" for franka/ur).
+
+  # Proprioceptive features used by SERLObsWrapper. SERL takes proprio_keys[:2] by default.
+  # joints=5-dim, gripper_pose=1-dim → SERL flattens to 6-dim state, matching reward classifier
+  # input_features.observation.state.shape and cube_103ep dataset state schema.
+  # tcp_pose intentionally omitted (no FK in joint mode).
+  proprio_keys: ["joints", "gripper_pose"]
+
+  # SO101 lerobot port + calibration id (override in task yaml or via CLI per machine).
+  # On the GPU server (fake_env testing): leave as placeholder.
+  # On the laptop deployment: real /dev/ttyACM* port.
+  so101_follower_port: "/dev/ttyACM0"
+  so101_follower_id: "so101_follower"
+  so101_leader_port: "/dev/ttyACM1"
+  so101_leader_id: "so101_leader"
+
+  # Cameras (lerobot OpenCV cameras). icSpring fourcc + index pinned to match SmolVLA deployment.
+  # MUST match training dataset camera setup.
+  so101_cameras:
+    fixed:
+      type: opencv
+      index_or_path: "/dev/v4l/by-id/usb-icSpring_icspring_camera_202404160005-video-index0"
+      width: 640
+      height: 480
+      fps: 30
+      fourcc: "MJPG"
+    wrist:
+      type: opencv
+      index_or_path: "/dev/v4l/by-id/usb-icSpring_icspring_camera-video-index0"
+      width: 640
+      height: 480
+      fps: 30
+      fourcc: "YUYV"
+
+  # xyz EE bounding box — joint mode doesn't enforce this, but base_env reads abs_pose_limit_*[:3].
+  # Dummy unit box; safety in joint mode goes via per-joint max_relative_target (below).
+  target_pose: ${target_pose}
+  abs_pose_limit_low: ${abs_pose_limit_low}
+  abs_pose_limit_high: ${abs_pose_limit_high}
+  reset_joint: ${reset_joint}
+
+  # Per-joint single-step safety cap (degrees per control tick at 15 Hz).
+  # Mirrors SmolVLA deployment max_relative_target. 5 arm joints + 1 gripper.
+  max_relative_target: [3.0, 3.0, 3.0, 3.0, 3.0, 5.0]
+
+  # No random init in joint mode (random_xy/rz only used in EE-delta mode).
+  random_reset: false
+  random_xy_range: 0.0
+  random_rz_range: 0.0
+  gripper_sleep: 0.05
+
+  max_episode_length: ${max_episode_length}
+  control_mode: ${control_mode}
+  classifier_cfg: ${classifier_cfg}
+  gripper_penalty: ${gripper_penalty}
+  close_gripper: ${close_gripper}
+  fix_gripper: ${fix_gripper}
+  ego_mode: ${ego_mode}

@@ -123,9 +123,11 @@ def train_cli(env_cfg):
         env_cfg.lerobot_config_path = "../../../../../cfg/train_config_silri_ur.json"
     elif "franka" in env_cfg.robot_config.robot_type:
         env_cfg.lerobot_config_path = "../../../../../cfg/train_config_silri_franka.json"
-    
+
     elif "tienkung" in env_cfg.robot_config.robot_type:
         env_cfg.lerobot_config_path = "../../../../../cfg/train_config_silri_tienkung.json"
+    elif "so101" in env_cfg.robot_config.robot_type:
+        env_cfg.lerobot_config_path = "../../../../../cfg/train_config_silri_so101.json"
     else:
         raise ValueError(f"Invalid robot type: {env_cfg.robot_type}")
     
