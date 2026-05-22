@@ -1,7 +1,11 @@
 datasets==3.5.0
 safetensors==0.5.3
-protobuf==6.32.0
+protobuf==6.31.0
 hydra-core==1.3.2
 draccus==0.10.0
 numpy==1.26.4
 huggingface-hub==0.35.3
+# lerobot pyproject lists feetech-servo-sdk in optional [feetech] extras and grpcio
+# in optional [grpcio-dep], but they are needed for SO101 / async / actor-learner.
+feetech-servo-sdk>=1.0.0
+grpcio==1.73.1

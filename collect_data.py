@@ -207,9 +207,6 @@ def step_env_and_process_transition(
         Processed transition with updated state.
     """
     device = torch.device("cpu")
-    action[2] = 1.0
-    print(f"action: {action}")
-    # input("press Enter to continue...")
     obs, reward, terminated, truncated, info = env.step(action)
     obs = make_policy_obs(obs, device, env_cfg.robot_config.robot_type)
 
@@ -442,8 +439,9 @@ def main(env_cfg):
     elif "tienkung" in env_cfg.robot_config.robot_type:
         lerobot_config_path = "../../cfg/train_config_collect_data_tienkung.json"
     elif "so101" in env_cfg.robot_config.robot_type:
-        # SO101 reuses the generic collect_data JSON — only cfg.dataset + cfg.mode are consumed
-        # downstream; cfg.env.* is dead weight because env is already built via make_env(env_cfg).
+        # SO101 reuses the generic collect_data JSON — only cfg.dataset + cfg.mode
+        # are consumed downstream; cfg.env.* is dead weight because env is already
+        # built via make_env(env_cfg) using the YAML cfg.
         lerobot_config_path = "../../cfg/train_config_collect_data.json"
     else:
         raise ValueError(f"Invalid robot type: {env_cfg.robot_config.robot_type}")
