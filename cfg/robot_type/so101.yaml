@@ -33,11 +33,11 @@ robot_config:
   proprio_keys: ["joints", "gripper_pose"]
 
   # SO101 lerobot port + calibration id (override in task yaml or via CLI per machine).
-  # On the GPU server (fake_env testing): leave as placeholder.
-  # On the laptop deployment: real /dev/ttyACM* port.
-  so101_follower_port: "/dev/ttyACM0"
+  # Laptop deployment: by-id paths bound to CH340 serials (stable across enumerate order).
+  # follower CH340 serial 5C4C128258; leader CH340 serial 5C4C125442.
+  so101_follower_port: "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5C4C128258-if00"
   so101_follower_id: "so101_follower"
-  so101_leader_port: "/dev/ttyACM1"
+  so101_leader_port: "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5C4C125442-if00"
   so101_leader_id: "so101_leader"
 
   # Cameras (lerobot OpenCV cameras). icSpring fourcc + index pinned to match SmolVLA deployment.

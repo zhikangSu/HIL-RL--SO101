@@ -15,7 +15,10 @@ reset_joint: [1.71, -100.29, 89.69, 72.60, -4.61, 1.18]
 dataset:
   repo_id: cube_so101
   use_imagenet_stats: false
-  root: /data/users/szk/smolvla_project/data/SO101/hilrl_classifier/cube_so101
+  # Laptop deployment: dataset not present locally (recording-only inference path
+  # does not load it). Pointing to a non-existent stub; if a code path actually
+  # reads it we'll surface the error and rsync the dataset then.
+  root: /home/meow/HIL-RL--SO101/offline_dataset/cube_so101
 
 gripper_penalty: -0.05
 classifier_cfg:
@@ -23,8 +26,8 @@ classifier_cfg:
   # holdout: success acc 98.3% / failure acc 85.0% / overall 91.7%.
   classifier_keys: ["fixed"]
   pretrained_encoder_path: null  # using helper2424/resnet10 from HF cache, no .pkl
-  checkpoint_path: /data/users/szk/HIL-RL/experiments/cube_so101/outputs/train/2026-05-22/03-43-35_reward-classifier-cube-so101/checkpoints/000500
-  dataset_path: /data/users/szk/smolvla_project/data/SO101/hilrl_classifier/cube_so101
+  checkpoint_path: /home/meow/HIL-RL--SO101/experiments/cube_so101/outputs/train/2026-05-22/03-43-35_reward-classifier-cube-so101/checkpoints/000500
+  dataset_path: /home/meow/HIL-RL--SO101/offline_dataset/cube_so101
   reward_pos: 10.0
   reward_neg: -0.05
   require_train: false   # do not fine-tune classifier during RL (holdout 91.7% is already good enough for first run)
