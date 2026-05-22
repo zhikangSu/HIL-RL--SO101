@@ -1,0 +1,47 @@
+task_name: cube_so101
+control_mode: joint   # override config.yaml default of "pose" (used by franka/ur EE-delta)
+
+# Dummy xyz EE bounding box — joint mode does not enforce this (we use per-joint
+# max_relative_target instead). Field must be present because base_env reads it
+# unconditionally in __init__.
+abs_pose_limit_low: [-1.0, -1.0, -1.0, 0.0, 0.0, 0.0]
+abs_pose_limit_high: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+
+# SO101 reset pose: mean of initial joint state across 103 cube_into_cup episodes.
+# Computed from data/SO101/so101_cube_into_cup_103ep (2026-05-22).
+# 6-DoF = 5 joints (degrees) + gripper (0-100 stroke %).
+reset_joint: [1.71, -100.29, 89.69, 72.60, -4.61, 1.18]
+
+dataset:
+  repo_id: cube_so101
+  use_imagenet_stats: false
+  root: /data/users/szk/smolvla_project/data/SO101/hilrl_classifier/cube_so101
+
+gripper_penalty: -0.05
+classifier_cfg:
+  # Reward classifier trained 2026-05-22 on cube_103ep gripper-zero-tail labels.
+  # holdout: success acc 98.3% / failure acc 85.0% / overall 91.7%.
+  classifier_keys: ["fixed"]
+  pretrained_encoder_path: null  # using helper2424/resnet10 from HF cache, no .pkl
+  checkpoint_path: /data/users/szk/HIL-RL/experiments/cube_so101/outputs/train/2026-05-22/03-43-35_reward-classifier-cube-so101/checkpoints/000500
+  dataset_path: /data/users/szk/smolvla_project/data/SO101/hilrl_classifier/cube_so101
+  reward_pos: 10.0
+  reward_neg: -0.05
+  require_train: false   # do not fine-tune classifier during RL (holdout 91.7% is already good enough for first run)
+  task_name: ${task_name}
+  algorithm: hil-serl
+  target_hz: 15
+  batch_size: 32
+  enable_stacking: false
+  load_classifier: ${load_classifier}
+
+# Train gripper as part of action (not fix-gripper task like close_trashbin).
+close_gripper: false
+fix_gripper: false
+
+# 15 Hz * 20s = 300 steps. cube task average duration in dataset is ~16.7s @ 30fps.
+max_episode_length: 300
+max_train_time: 3600
+
+resume_model: false
+resume_path: None

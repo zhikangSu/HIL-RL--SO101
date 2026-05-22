@@ -50,6 +50,15 @@ def make_env(config, fake_env, use_human_intervention, classifier=False, use_gri
                         rotation_scale=getattr(config, "spacemouse_rotation_scale", 1.0),
                         axis_signs=getattr(config, "spacemouse_axis_signs", [1, 1, 1, 1, 1, 1]),
                     )
+                elif intervention_backend == "leader_so101":
+                    # SO101 leader-arm intervention (joint mode, position-mirror).
+                    # See rl_envs/wrappers.py:SO101LeaderIntervention for details.
+                    from rl_envs.wrappers import SO101LeaderIntervention
+                    env = SO101LeaderIntervention(
+                        env,
+                        error_threshold_deg=float(getattr(config, "leader_so101_error_threshold_deg", 8.0)),
+                        gripper_binary_threshold_pct=float(getattr(config, "leader_so101_gripper_binary_threshold_pct", 15.0)),
+                    )
                 elif intervention_backend == "xtele":
                     env = HumanIntervention(env)
                 else:
