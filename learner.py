@@ -117,19 +117,22 @@ new_offline_transition_num = 0
 
 
 # @parser.wrap()
-@hydra.main(config_path="./cfg", config_name="config") 
+@hydra.main(config_path="./cfg", config_name="config")
 def train_cli(env_cfg):
+    # Path is relative to cwd (Hydra 1.3+ defaults hydra.job.chdir=False, so cwd stays
+    # at the experiments/<task>/ dir the user launches from). Two levels up + cfg/ lands
+    # at the HIL-RL repo root's cfg/. Matches actor.py and collect_data.py.
     if env_cfg.robot_config.robot_type == "ur_wrist":
-        env_cfg.lerobot_config_path = "../../../../../cfg/train_config_silri_ur.json"
+        env_cfg.lerobot_config_path = "../../cfg/train_config_silri_ur.json"
     elif "franka" in env_cfg.robot_config.robot_type:
-        env_cfg.lerobot_config_path = "../../../../../cfg/train_config_silri_franka.json"
+        env_cfg.lerobot_config_path = "../../cfg/train_config_silri_franka.json"
 
     elif "tienkung" in env_cfg.robot_config.robot_type:
-        env_cfg.lerobot_config_path = "../../../../../cfg/train_config_silri_tienkung.json"
+        env_cfg.lerobot_config_path = "../../cfg/train_config_silri_tienkung.json"
     elif "so101" in env_cfg.robot_config.robot_type:
-        env_cfg.lerobot_config_path = "../../../../../cfg/train_config_silri_so101.json"
+        env_cfg.lerobot_config_path = "../../cfg/train_config_silri_so101.json"
     else:
-        raise ValueError(f"Invalid robot type: {env_cfg.robot_type}")
+        raise ValueError(f"Invalid robot type: {env_cfg.robot_config.robot_type}")
     
     
     config_path = env_cfg.lerobot_config_path
