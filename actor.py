@@ -144,7 +144,7 @@ def actor_cli(env_cfg):
     elif "so101" in env_cfg.robot_config.robot_type:
         lerobot_config_path = "../../cfg/train_config_silri_so101.json"
     else:
-        raise ValueError(f"Invalid robot type: {env_cfg.robot_type}")
+        raise ValueError(f"Invalid robot type: {env_cfg.robot_config.robot_type}")
     with draccus.config_type("json"):
         if not env_cfg.fix_gripper:
             cfg = draccus.parse(TrainRLServerPipelineConfig, lerobot_config_path, args=[f"--policy.type={env_cfg.policy_type}", f"--policy.num_discrete_actions=2"])
