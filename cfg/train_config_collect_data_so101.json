@@ -12,7 +12,7 @@
 
     "env": {
         "robot": {
-            "type": "so101_follower",
+            "type": "so100_follower_end_effector",
             "port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5C4C128258-if00",
             "urdf_path": "",
             "target_frame_name": "",
@@ -39,7 +39,7 @@
             "max_gripper_pos": 30
         },
         "teleop": {
-            "type": "so101_leader",
+            "type": "gamepad",
             "use_gripper": true
         },
         "wrapper": {
