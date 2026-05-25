@@ -440,7 +440,12 @@ def main(env_cfg):
     elif "ur" in env_cfg.robot_config.robot_type:
         lerobot_config_path = "../../cfg/train_config_collect_data.json"
     elif "tienkung" in env_cfg.robot_config.robot_type:
-        lerobot_config_path = "../../cfg/train_config_collect_data_tienkung.json" 
+        lerobot_config_path = "../../cfg/train_config_collect_data_tienkung.json"
+    elif "so101" in env_cfg.robot_config.robot_type:
+        # SO101 has its own JSON because the dataset action shape is derived from
+        # cfg.env.features['action'].shape[0]+1 (line ~257) and SO101 needs 5 (+1 = 6),
+        # not the franka/ur default of 6 (+1 = 7). Also fixes camera keys (fixed/wrist).
+        lerobot_config_path = "../../cfg/train_config_collect_data_so101.json"
     else:
         raise ValueError(f"Invalid robot type: {env_cfg.robot_type}")
 
