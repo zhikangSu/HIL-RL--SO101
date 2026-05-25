@@ -318,7 +318,25 @@ def control_loop(
         # print('episode_idx:', episode_idx)
         step_start_time = time.perf_counter()
 
-        neutral_action = torch.tensor([0.0] * (continuous_action_dim + 1), dtype=torch.float32)
+        # "Neutral" action: what to do when user isn't intervening. For SO101 dry-run
+        # the obvious choice is "stay where you are" — zero action would otherwise be
+        # interpreted by SO101Station as SAC tanh squash output and unnormalized to the
+        # joint mid-range, causing the follower to drift on its own. For franka/ur with
+        # gamepad teleop, keep the original all-zeros behavior (their action space is
+        # EE-delta, where zero = no motion). The unnormalize logic in SO101Station is
+        # untouched — it's still needed for real SAC policy deployment.
+        if "so101" in env_cfg.robot_config.robot_type:
+            state_tensor = transition[TransitionKey.OBSERVATION].get("observation.state")
+            if state_tensor is not None and state_tensor.numel() == continuous_action_dim + 1:
+                neutral_action = state_tensor.squeeze().detach().cpu().clone().float()
+                # gripper (last element) is a stroke percent in [0, 100] from the bus;
+                # binarize using the same threshold as SO101LeaderIntervention (15%) so
+                # the station maps it back to the current open/closed state.
+                neutral_action[-1] = 1.0 if neutral_action[-1].item() > 15.0 else 0.0
+            else:
+                neutral_action = torch.tensor([0.0] * (continuous_action_dim + 1), dtype=torch.float32)
+        else:
+            neutral_action = torch.tensor([0.0] * (continuous_action_dim + 1), dtype=torch.float32)
 
         # Use the new step function
         transition = step_env_and_process_transition(
