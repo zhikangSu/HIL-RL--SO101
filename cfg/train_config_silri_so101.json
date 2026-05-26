@@ -241,7 +241,7 @@
             "action": {
                 "type": "ACTION",
                 "shape": [
-                    5
+                    6
                 ]
             }
         },
