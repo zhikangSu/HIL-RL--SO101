@@ -45,6 +45,8 @@ https://github.com/michel-aractingi/lerobot-hilserl-guide
 """
 
 import logging
+import hashlib
+import json
 import os
 import shutil
 import time
@@ -99,6 +101,7 @@ from lerobot.utils.utils import (
 )
 from lerobot.utils.wandb_utils import WandBLogger
 import hydra
+from hydra.utils import get_original_cwd
 import draccus
 from omegaconf import OmegaConf
 from lerobot.configs.default import DatasetConfig
@@ -1417,6 +1420,149 @@ def initialize_replay_buffer(
         optimize_memory=True
     )
 
+
+OFFLINE_REPLAY_CACHE_VERSION = 1
+
+
+def _get_original_working_dir() -> Path:
+    try:
+        return Path(get_original_cwd())
+    except Exception:
+        return Path.cwd()
+
+
+def _offline_replay_cache_path(cfg: TrainRLServerPipelineConfig) -> tuple[Path, dict]:
+    dataset_root = str(Path(str(cfg.dataset.root)).expanduser().resolve())
+    state_keys = list(cfg.policy.input_features.keys())
+    metadata = {
+        "version": OFFLINE_REPLAY_CACHE_VERSION,
+        "repo_id": cfg.dataset.repo_id,
+        "dataset_root": dataset_root,
+        "state_keys": state_keys,
+        "capacity": int(cfg.policy.offline_buffer_capacity),
+        "optimize_memory": True,
+    }
+    digest = hashlib.sha1(json.dumps(metadata, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    safe_repo_id = str(cfg.dataset.repo_id).replace("/", "_")
+    cache_dir = _get_original_working_dir() / "offline_replay_cache"
+    return cache_dir / f"{safe_repo_id}_{digest}.pt", metadata
+
+
+def _chronological_indices(buffer: ReplayBuffer) -> torch.Tensor:
+    start = (buffer.position - buffer.size) % buffer.capacity
+    return (torch.arange(buffer.size, device=buffer.storage_device) + start) % buffer.capacity
+
+
+def _slice_buffer_tensor(tensor: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+    return tensor[indices].detach().cpu()
+
+
+def _save_offline_replay_buffer_cache(
+    replay_buffer: ReplayBuffer,
+    cache_path: Path,
+    metadata: dict,
+) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    indices = _chronological_indices(replay_buffer)
+    payload = {
+        "metadata": metadata,
+        "size": int(replay_buffer.size),
+        "state_keys": list(replay_buffer.state_keys),
+        "optimize_memory": bool(replay_buffer.optimize_memory),
+        "states": {k: _slice_buffer_tensor(v, indices) for k, v in replay_buffer.states.items()},
+        "actions": _slice_buffer_tensor(replay_buffer.actions, indices),
+        "rewards": _slice_buffer_tensor(replay_buffer.rewards, indices),
+        "dones": _slice_buffer_tensor(replay_buffer.dones, indices),
+        "truncateds": _slice_buffer_tensor(replay_buffer.truncateds, indices),
+        "episode_ends": _slice_buffer_tensor(replay_buffer.episode_ends, indices),
+        "has_complementary_info": bool(replay_buffer.has_complementary_info),
+        "complementary_info_keys": list(replay_buffer.complementary_info_keys),
+        "complementary_info": {
+            k: _slice_buffer_tensor(v, indices) for k, v in replay_buffer.complementary_info.items()
+        },
+    }
+    if not replay_buffer.optimize_memory:
+        payload["next_states"] = {
+            k: _slice_buffer_tensor(v, indices) for k, v in replay_buffer.next_states.items()
+        }
+
+    tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+    torch.save(payload, tmp_path)
+    os.replace(tmp_path, cache_path)
+    logging.info("Saved offline replay buffer cache to %s", cache_path)
+
+
+def _restore_tensor_to_capacity(tensor: torch.Tensor, capacity: int, storage_device: str) -> torch.Tensor:
+    restored = torch.empty((capacity, *tensor.shape[1:]), dtype=tensor.dtype, device=storage_device)
+    restored[: tensor.shape[0]].copy_(tensor.to(storage_device))
+    return restored
+
+
+def _load_offline_replay_buffer_cache(
+    cache_path: Path,
+    expected_metadata: dict,
+    cfg: TrainRLServerPipelineConfig,
+    device: str,
+    storage_device: str,
+) -> ReplayBuffer | None:
+    if not cache_path.exists():
+        return None
+
+    try:
+        payload = torch.load(cache_path, map_location="cpu", weights_only=False)
+        if payload.get("metadata") != expected_metadata:
+            logging.warning("Offline replay buffer cache metadata mismatch, rebuilding: %s", cache_path)
+            return None
+
+        replay_buffer = ReplayBuffer(
+            capacity=int(cfg.policy.offline_buffer_capacity),
+            device=device,
+            state_keys=list(cfg.policy.input_features.keys()),
+            storage_device=storage_device,
+            optimize_memory=bool(payload["optimize_memory"]),
+        )
+        replay_buffer.initialized = True
+        replay_buffer.size = int(payload["size"])
+        replay_buffer.position = replay_buffer.size % replay_buffer.capacity
+        replay_buffer.states = {
+            k: _restore_tensor_to_capacity(v, replay_buffer.capacity, storage_device)
+            for k, v in payload["states"].items()
+        }
+        if replay_buffer.optimize_memory:
+            replay_buffer.next_states = replay_buffer.states
+        else:
+            replay_buffer.next_states = {
+                k: _restore_tensor_to_capacity(v, replay_buffer.capacity, storage_device)
+                for k, v in payload["next_states"].items()
+            }
+        replay_buffer.actions = _restore_tensor_to_capacity(
+            payload["actions"], replay_buffer.capacity, storage_device
+        )
+        replay_buffer.rewards = _restore_tensor_to_capacity(
+            payload["rewards"], replay_buffer.capacity, storage_device
+        )
+        replay_buffer.dones = _restore_tensor_to_capacity(
+            payload["dones"], replay_buffer.capacity, storage_device
+        )
+        replay_buffer.truncateds = _restore_tensor_to_capacity(
+            payload["truncateds"], replay_buffer.capacity, storage_device
+        )
+        replay_buffer.episode_ends = _restore_tensor_to_capacity(
+            payload["episode_ends"], replay_buffer.capacity, storage_device
+        )
+        replay_buffer.has_complementary_info = bool(payload["has_complementary_info"])
+        replay_buffer.complementary_info_keys = list(payload["complementary_info_keys"])
+        replay_buffer.complementary_info = {
+            k: _restore_tensor_to_capacity(v, replay_buffer.capacity, storage_device)
+            for k, v in payload["complementary_info"].items()
+        }
+        logging.info("Loaded offline replay buffer cache from %s", cache_path)
+        return replay_buffer
+    except Exception as exc:
+        logging.warning("Failed to load offline replay buffer cache %s: %s", cache_path, exc)
+        return None
+
+
 import traceback
 import sys
 
@@ -1437,6 +1583,17 @@ def initialize_offline_replay_buffer(
         ReplayBuffer: Initialized offline replay buffer
     """
     if not cfg.resume:
+        cache_path, cache_metadata = _offline_replay_cache_path(cfg)
+        cached_replay_buffer = _load_offline_replay_buffer_cache(
+            cache_path=cache_path,
+            expected_metadata=cache_metadata,
+            cfg=cfg,
+            device=device,
+            storage_device=storage_device,
+        )
+        if cached_replay_buffer is not None:
+            return cached_replay_buffer
+
         logging.info("make_dataset offline buffer")
         # INSERT_YOUR_CODE
         offline_dataset = make_dataset(cfg)
@@ -1462,6 +1619,15 @@ def initialize_offline_replay_buffer(
         print(f"[{type(e).__name__}] {e!r}")
         traceback.print_exc()          # full stacktrace
         sys.exit(1)
+    if not cfg.resume:
+        try:
+            _save_offline_replay_buffer_cache(
+                replay_buffer=offline_replay_buffer,
+                cache_path=cache_path,
+                metadata=cache_metadata,
+            )
+        except Exception as exc:
+            logging.warning("Failed to save offline replay buffer cache %s: %s", cache_path, exc)
     return offline_replay_buffer
 
 
