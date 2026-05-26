@@ -918,16 +918,37 @@ def offline_training(cfg: TrainRLServerPipelineConfig, policy: nn.Module, optimi
     device = get_safe_torch_device(try_device=cfg.policy.device, log=True)
     if os.path.exists(expert_pretrain_path) and os.path.exists(actor_pretrain_path):
         # todo: debug
-        policy.actor.load_state_dict(torch.load(actor_pretrain_path))
-        policy.actor.train()
-        policy.expert_network.load_state_dict(torch.load(expert_pretrain_path))
-        policy.expert_network.train()
+        actor_state = torch.load(actor_pretrain_path)
+        has_discrete_actor = hasattr(policy, "discrete_actor") and policy.discrete_actor is not None
+        checkpoint_has_discrete_actor = (
+            isinstance(actor_state, dict)
+            and "actor" in actor_state
+            and (not has_discrete_actor or "discrete_actor" in actor_state)
+        )
+        if has_discrete_actor and not checkpoint_has_discrete_actor:
+            logging.warning(
+                "Actor pretrain checkpoint lacks discrete_actor parameters; rebuilding offline pretrain."
+            )
+        else:
+            if isinstance(actor_state, dict) and "actor" in actor_state:
+                policy.actor.load_state_dict(actor_state["actor"])
+                if has_discrete_actor:
+                    policy.discrete_actor.load_state_dict(actor_state["discrete_actor"])
+            else:
+                policy.actor.load_state_dict(actor_state)
+        
+            policy.actor.train()
+            policy.expert_network.load_state_dict(torch.load(expert_pretrain_path))
+            policy.expert_network.train()
 
-        if hasattr(policy, "actor_target"):
-            policy.actor_target.load_state_dict(policy.actor.state_dict())
-            policy.actor_target.eval()
-        print(' success load actor pretrain model from ', actor_pretrain_path)
-        return 
+            if hasattr(policy, "actor_target"):
+                policy.actor_target.load_state_dict(policy.actor.state_dict())
+                policy.actor_target.eval()
+            print(' success load actor pretrain model from ', actor_pretrain_path)
+            return
+
+    if os.path.exists(expert_pretrain_path) and not os.path.exists(actor_pretrain_path):
+        logging.warning("Expert pretrain exists but actor pretrain is missing; rebuilding offline pretrain.")
 
 
     batch_size = cfg.batch_size
@@ -1009,7 +1030,10 @@ def offline_training(cfg: TrainRLServerPipelineConfig, policy: nn.Module, optimi
 
     # print('expert_pretrain_path:', expert_pretrain_path)
     torch.save(policy.expert_network.state_dict(), expert_pretrain_path)
-    torch.save(policy.actor.state_dict(), actor_pretrain_path) 
+    actor_state = {"actor": policy.actor.state_dict()}
+    if hasattr(policy, "discrete_actor") and policy.discrete_actor is not None:
+        actor_state["discrete_actor"] = policy.discrete_actor.state_dict()
+    torch.save(actor_state, actor_pretrain_path) 
     print(' success save actor pretrain model to ', actor_pretrain_path)
     # torch.save(policy.critic_ensemble.state_dict(), critic_pretrain_path)
     if hasattr(policy, "actor_target"):
@@ -1222,7 +1246,7 @@ def make_optimizers_and_scheduler(cfg: TrainRLServerPipelineConfig, policy: nn.M
                 params=policy.discrete_critic.parameters(), lr=cfg.policy.critic_lr
             )
 
-
+    actor_params = list({id(p): p for p in actor_params}.values())
     optimizer_actor = torch.optim.Adam(params=actor_params, lr=cfg.policy.actor_lr)
 
 
