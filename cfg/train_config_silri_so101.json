@@ -86,7 +86,7 @@
         "online_steps": 12000,
         "online_env_seed": 10000,
         "online_buffer_capacity": 30000,
-        "offline_buffer_capacity": 10000,
+        "offline_buffer_capacity": 12000,
         "online_step_before_learning": 10,
         "policy_update_freq": 1,
         "discount": 0.97,
