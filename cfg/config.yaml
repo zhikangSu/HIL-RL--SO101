@@ -25,13 +25,15 @@ spacemouse_translation_scale: 1
 spacemouse_rotation_scale: 1
 spacemouse_axis_signs: [1.0, -1.0, -1.0, 1.0, -1.0, -1.0]
 
-# SO101 leader-arm intervention (joint mode, position-mirror)
-# error_threshold_deg: currently UNUSED. SO101LeaderIntervention now runs in pure-
-# teleop mode (leader is always a passive position sensor, follower always tracks),
-# so the threshold-based mirror/intervention switch was removed. Keeping this knob
-# in case you revert wrappers.py to the original HIL-SERL torque-assist behavior.
-leader_so101_error_threshold_deg: 3.0
+# SO101 leader-arm HIL mode (joint mode, position-mirror).
+# Default is policy-autonomous. The leader mirrors the follower with torque enabled;
+# pulling the leader away by this L2 joint-error threshold switches to takeover.
+leader_so101_error_threshold_deg: 8.0
 leader_so101_gripper_binary_threshold_pct: 15.0
+leader_so101_release_error_threshold_deg: 4.0
+leader_so101_release_motion_threshold_deg: 0.75
+leader_so101_min_intervention_s: 0.5
+leader_so101_release_queue_size: 4
 
 
 hydra:

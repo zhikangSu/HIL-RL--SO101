@@ -58,6 +58,10 @@ def make_env(config, fake_env, use_human_intervention, classifier=False, use_gri
                         env,
                         error_threshold_deg=float(getattr(config, "leader_so101_error_threshold_deg", 8.0)),
                         gripper_binary_threshold_pct=float(getattr(config, "leader_so101_gripper_binary_threshold_pct", 15.0)),
+                        release_error_threshold_deg=float(getattr(config, "leader_so101_release_error_threshold_deg", 4.0)),
+                        release_motion_threshold_deg=float(getattr(config, "leader_so101_release_motion_threshold_deg", 0.75)),
+                        min_intervention_s=float(getattr(config, "leader_so101_min_intervention_s", 0.5)),
+                        release_queue_size=int(getattr(config, "leader_so101_release_queue_size", 4)),
                     )
                 elif intervention_backend == "xtele":
                     env = HumanIntervention(env)

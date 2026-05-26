@@ -57,7 +57,7 @@ export CUDA_VISIBLE_DEVICES=""
 # Overrides explained:
 #   robot_type@_global_=so101          load cfg/robot_type/so101.yaml
 #   task@_global_=cube_so101           load cfg/task/cube_so101.yaml
-#   intervention_backend=leader_so101  use SO101LeaderIntervention (passive teleop mode)
+#   intervention_backend=leader_so101  use SO101 policy-first leader takeover mode
 #   use_human_intervention=true        enable intervention wrapper (mandatory for SiLRI)
 #   load_classifier=true               load the trained reward classifier from disk
 #   policy_type=silri                  use SiLRI variant of SAC actor-critic
