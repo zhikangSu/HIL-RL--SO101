@@ -908,7 +908,8 @@ import tqdm
 
 
 def offline_training(cfg: TrainRLServerPipelineConfig, policy: nn.Module, optimizers: dict, offline_replay_buffer: ReplayBuffer, wandb_logger: WandBLogger | None):
-    pretrain_dir = os.path.join(os.getcwd(), "../../../", f"expert_model_{cfg.policy.type}")
+    cache_path, _ = _offline_replay_cache_path(cfg)
+    pretrain_dir = _get_original_working_dir() / f"expert_model_{cfg.policy.type}_{cache_path.stem}"
     if not os.path.exists(pretrain_dir):
         os.makedirs(pretrain_dir)
 
