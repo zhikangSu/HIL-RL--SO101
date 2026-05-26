@@ -364,6 +364,11 @@ def act_with_policy(
     time_step = 0
     episode = 0
     status_print_interval = max(1, int(getattr(env_cfg.robot_config, "hz", 15)) * 2)
+    policy_action_smoothing_alpha = float(
+        getattr(env_cfg.robot_config, "policy_action_smoothing_alpha", 1.0)
+    )
+    policy_action_smoothing_alpha = min(1.0, max(0.0, policy_action_smoothing_alpha))
+    prev_policy_action = None
 
     for interaction_step in range(cfg.policy.online_steps):
         start_time = time.perf_counter()
@@ -384,6 +389,18 @@ def act_with_policy(
             policy_action, action_info = policy.select_action(batch=policy_obs)
 
             policy_action = policy_action.squeeze(0).cpu().detach().numpy()
+
+            if policy_action_smoothing_alpha < 1.0:
+                smooth_dim = min(policy.continuous_action_dim, policy_action.shape[0])
+                smoothed_action = policy_action.copy()
+                if prev_policy_action is not None and prev_policy_action.shape == policy_action.shape:
+                    smoothed_action[:smooth_dim] = (
+                        policy_action_smoothing_alpha * policy_action[:smooth_dim]
+                        + (1.0 - policy_action_smoothing_alpha) * prev_policy_action[:smooth_dim]
+                    )
+                    smoothed_action[:smooth_dim] = np.clip(smoothed_action[:smooth_dim], -1.0, 1.0)
+                prev_policy_action = smoothed_action.copy()
+                policy_action = smoothed_action
 
 
             if env_cfg.fix_gripper: 
@@ -420,6 +437,7 @@ def act_with_policy(
         if "is_intervention" in info and info["is_intervention"]:
 
             action = info["intervene_action"] 
+            prev_policy_action = None
 
             episode_intervention = True           
             # Increment intervention steps counter

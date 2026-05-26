@@ -66,11 +66,10 @@ robot_config:
   reset_joint: ${reset_joint}
 
   # Per-joint single-step safety cap (degrees per control tick at 15 Hz).
-  # 8°/tick × 15 Hz = 120°/s — fast enough for follower to track a human-paced
-  # leader without obvious lag, still well under sts3215 native max (~300°/s).
-  # Bump down to 3-5 for first-time policy rollouts where lag is acceptable in
-  # exchange for stricter safety. 5 arm joints + 1 gripper.
-  max_relative_target: [8.0, 8.0, 8.0, 8.0, 8.0, 10.0]
+  # 4°/tick × 15 Hz = 60°/s. Keep first SO101 online rollouts conservative;
+  # raise only after the policy is visibly stable.
+  max_relative_target: [4.0, 4.0, 4.0, 4.0, 4.0, 8.0]
+  policy_action_smoothing_alpha: 0.35
 
   # Policy action unnormalize bounds: SAC tanh squash outputs [-1, 1], we map to physical
   # joint degree range. Derived from cube_103ep dataset min/max with ±2° safety buffer.
