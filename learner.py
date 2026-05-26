@@ -438,6 +438,9 @@ def add_actor_information_and_train(
             offline_replay_buffer=offline_replay_buffer,
             wandb_logger=wandb_logger,
         )
+        logging.info("Pushing policy parameters after offline pretraining")
+        push_actor_policy_to_queue(parameters_queue=parameters_queue, policy=policy)
+        last_time_policy_pushed = time.time()
     
     # st_time = time.time()
     # NOTE: THIS IS THE MAIN LOOP OF THE LEARNER
