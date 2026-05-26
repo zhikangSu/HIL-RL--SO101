@@ -73,9 +73,9 @@ python ../../actor.py \
     use_human_intervention=true \
     load_classifier=true \
     policy_type=silri \
-    policy.device=cpu \
-    policy.storage_device=cpu \
-    'policy.actor_learner_config.learner_host=localhost' \
+    +policy.device=cpu \
+    +policy.storage_device=cpu \
+    '+policy.actor_learner_config.learner_host=localhost' \
     fake_env=false 2>&1 | tee "$LOG_FILE"
 
 EXIT_CODE=${PIPESTATUS[0]}

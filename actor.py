@@ -157,6 +157,16 @@ def actor_cli(env_cfg):
     else:
         cfg.dataset = None
 
+    policy_override = OmegaConf.select(env_cfg, "policy")
+    if policy_override is not None:
+        policy_override = OmegaConf.to_container(policy_override, resolve=True)
+        if "device" in policy_override:
+            cfg.policy.device = policy_override["device"]
+        if "storage_device" in policy_override:
+            cfg.policy.storage_device = policy_override["storage_device"]
+        actor_learner_override = policy_override.get("actor_learner_config", {})
+        for key, value in actor_learner_override.items():
+            setattr(cfg.policy.actor_learner_config, key, value)
 
     cfg.validate()
 
