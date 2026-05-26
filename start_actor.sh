@@ -47,6 +47,8 @@ echo
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+export HYDRA_FULL_ERROR=1
+export PYTHONUNBUFFERED=1
 
 # RTX 5060 Ti is sm_120 (Blackwell). torch 2.1.1+cu121 in silri env only supports
 # up to sm_90 → all CUDA kernels error out with "no kernel image available".
