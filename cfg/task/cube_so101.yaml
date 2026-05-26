@@ -22,11 +22,11 @@ dataset:
 
 gripper_penalty: -0.05
 classifier_cfg:
-  # Reward classifier trained 2026-05-22 on cube_103ep gripper-zero-tail labels.
-  # holdout: success acc 98.3% / failure acc 85.0% / overall 91.7%.
+  # Reward classifier v2 synced from the GPU server on 2026-05-26.
+  # Trained 2026-05-25 for the first real SiLRI run.
   classifier_keys: ["fixed"]
   pretrained_encoder_path: null  # using helper2424/resnet10 from HF cache, no .pkl
-  checkpoint_path: /home/meow/HIL-RL--SO101/experiments/cube_so101/outputs/train/2026-05-22/03-43-35_reward-classifier-cube-so101/checkpoints/000500
+  checkpoint_path: /home/meow/HIL-RL--SO101/experiments/cube_so101/outputs/train/2026-05-25/16-47-04_reward-classifier-cube-so101/checkpoints/000500
   dataset_path: /home/meow/HIL-RL--SO101/offline_dataset/cube_so101
   reward_pos: 10.0
   reward_neg: -0.05
