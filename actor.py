@@ -114,12 +114,12 @@ import cv2
 def on_press(key):
     try:
         if str(key) == 'Key.scroll_lock':
-            print("----------------set human intervention key to {}!----------------".format(shared_state.human_intervention_key))
             shared_state.human_intervention_key = not shared_state.human_intervention_key
+            print(f"[按键] 人工介入开关已切换为 {shared_state.human_intervention_key}", flush=True)
             time.sleep(0.5)
         if str(key) == 'Key.space' or str(key) == 'Key.pause':
-            print("----------------set terminate to true!----------------")
             shared_state.terminate = True
+            print("[按键] 收到 Space：确认当前提示/标记本条成功/开始下一条。", flush=True)
             time.sleep(0.5)
     except AttributeError:
         pass
@@ -348,6 +348,10 @@ def act_with_policy(
     assert isinstance(policy, nn.Module)
 
     obs, info = online_env.reset()
+    print(
+        "\n[开始录制] 第 1 条开始：默认由 policy 控制从臂；需要纠偏时直接操作主臂接管。",
+        flush=True,
+    )
 
     # NOTE: For the moment we will solely handle the case of a single environment
     sum_reward_episode = 0    # 累计当前episode的奖励
@@ -359,6 +363,7 @@ def act_with_policy(
     policy_timer = TimerManager("Policy inference", log=False)
     time_step = 0
     episode = 0
+    status_print_interval = max(1, int(getattr(env_cfg.robot_config, "hz", 15)) * 2)
 
     for interaction_step in range(cfg.policy.online_steps):
         start_time = time.perf_counter()
@@ -426,7 +431,12 @@ def act_with_policy(
             episode_intervention = False
 
         hil_logger.log({"is_intervene": episode_intervention, "step": time_step, "episode": episode, "time": time.time(), "success": terminated})
-        print("current action:", action, 'reward:', reward)
+        if time_step == 1 or time_step % status_print_interval == 0 or done:
+            mode = "人工接管" if episode_intervention else "policy自主"
+            print(
+                f"[运行中] 第 {episode + 1} 条 | step={episode_total_steps} | 模式={mode} | reward={float(reward):.2f}",
+                flush=True,
+            )
         # 存储当前步的过渡数据
         obs_tensor = make_policy_obs(obs, device, env_cfg.robot_config.robot_type)
         next_obs_tensor = make_policy_obs(next_obs, device, env_cfg.robot_config.robot_type)
@@ -451,6 +461,7 @@ def act_with_policy(
         obs = next_obs
         if done:
             logging.info(f"[ACTOR] Global step {interaction_step}: Episode reward: {sum_reward_episode}")
+            end_reason = "成功" if terminated else "超时" if truncated else "结束"
 
             # 更新网络参数
             update_policy_parameters(policy=policy, parameters_queue=parameters_queue, device=device)
@@ -472,9 +483,15 @@ def act_with_policy(
             # Calculate the intervention rate (intervention steps / total steps)
             intervention_rate = 0.0
             time_step = 0
+            completed_episode = episode + 1
             episode += 1
             if episode_total_steps > 0:
                 intervention_rate = episode_intervention_steps / episode_total_steps
+            print(
+                f"\n[本条结束] 第 {completed_episode} 条{end_reason}，"
+                f"总步数={episode_total_steps}，介入率={intervention_rate:.1%}。已送入发送队列，准备重置环境。",
+                flush=True,
+            )
             # Send the episode statistics (reward, intervention rate, etc.) to the learner through interactions_queue
             interactions_queue.put(
                 python_object_to_bytes(
@@ -494,7 +511,12 @@ def act_with_policy(
             episode_intervention = False
             episode_intervention_steps = 0
             episode_total_steps = 0
+            print("[环境重置] 请摆好方块和杯子；从臂回到 reset 后按 Space 开始下一条。", flush=True)
             obs, info = online_env.reset()
+            print(
+                f"\n[开始录制] 第 {episode + 1} 条开始：默认由 policy 控制从臂；需要纠偏时直接操作主臂接管。",
+                flush=True,
+            )
 
        # Add the time span check at the end of the loop
         current_time_span = hil_logger.update_time_span()
