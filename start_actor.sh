@@ -76,7 +76,10 @@ python ../../actor.py \
     +policy.device=cpu \
     +policy.storage_device=cpu \
     '+policy.actor_learner_config.learner_host=localhost' \
-    fake_env=false 2>&1 | tee "$LOG_FILE"
+    fake_env=false \
+    'hydra.run.dir=./exp_local/${now:%Y.%m.%d}/actor_local' \
+    'hydra.sweep.subdir=${now:%Y.%m.%d}/actor_local' \
+    2>&1 | tee "$LOG_FILE"
 
 EXIT_CODE=${PIPESTATUS[0]}
 echo
