@@ -1,0 +1,46 @@
+From 3e2416f9fb34ad9b17d081384d25033be4f58118 Mon Sep 17 00:00:00 2001
+From: szk <nbccindy8@gmail.com>
+Date: Tue, 26 May 2026 14:43:04 +0800
+Subject: [PATCH] Fix SO101 offline replay initialization
+
+---
+ src/lerobot/policies/silri/modeling_silri.py | 6 ++++--
+ src/lerobot/utils/buffer.py                  | 1 +
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/lerobot/policies/silri/modeling_silri.py b/src/lerobot/policies/silri/modeling_silri.py
+index 341220a..df13faf 100644
+--- a/src/lerobot/policies/silri/modeling_silri.py
++++ b/src/lerobot/policies/silri/modeling_silri.py
+@@ -386,7 +386,10 @@ class SiLRIPolicy(
+         old_actions: Tensor | None = None
+     ):
+         actions_discrete: Tensor = old_actions[:, self.continuous_action_dim:].clone()
+-        actions_discrete = torch.round(actions_discrete)
++        if self.config.num_discrete_actions == 2:
++            actions_discrete = actions_discrete >= 0.5
++        else:
++            actions_discrete = torch.round(actions_discrete)
+         actions_discrete = actions_discrete.long()
+         actions_discrete = actions_discrete.squeeze(-1)
+         actions_pi = self.discrete_actor(observations, observation_features)
+@@ -914,4 +917,3 @@ class ValueEnsemble(nn.Module):
+         q_values = self.output_normalization(q_values)
+         return q_values
+ 
+-
+diff --git a/src/lerobot/utils/buffer.py b/src/lerobot/utils/buffer.py
+index 030c734..1f71a26 100644
+--- a/src/lerobot/utils/buffer.py
++++ b/src/lerobot/utils/buffer.py
+@@ -517,6 +517,7 @@ class ReplayBuffer:
+             first_transition = list_transition[0]
+             first_state = {k: v.to(device) for k, v in first_transition["state"].items()}
+             first_action = first_transition["action"].to(device)
++            first_complementary_info = None
+ 
+ 
+             # }
+-- 
+2.34.1
+

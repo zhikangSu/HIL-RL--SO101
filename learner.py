@@ -53,7 +53,6 @@ from pathlib import Path
 from pprint import pformat
 
 import grpc
-from keras.src.callbacks import optimizer
 import torch
 from termcolor import colored
 from torch import nn
@@ -119,22 +118,21 @@ new_offline_transition_num = 0
 # @parser.wrap()
 @hydra.main(config_path="./cfg", config_name="config")
 def train_cli(env_cfg):
-    # Path is relative to cwd (Hydra 1.3+ defaults hydra.job.chdir=False, so cwd stays
-    # at the experiments/<task>/ dir the user launches from). Two levels up + cfg/ lands
-    # at the HIL-RL repo root's cfg/. Matches actor.py and collect_data.py.
+    # Hydra may chdir into exp_local before calling this function. Resolve the
+    # draccus train_config path from this file instead of from the runtime cwd.
+    repo_root = Path(__file__).resolve().parent
     if env_cfg.robot_config.robot_type == "ur_wrist":
-        env_cfg.lerobot_config_path = "../../cfg/train_config_silri_ur.json"
+        env_cfg.lerobot_config_path = str(repo_root / "cfg/train_config_silri_ur.json")
     elif "franka" in env_cfg.robot_config.robot_type:
-        env_cfg.lerobot_config_path = "../../cfg/train_config_silri_franka.json"
+        env_cfg.lerobot_config_path = str(repo_root / "cfg/train_config_silri_franka.json")
 
     elif "tienkung" in env_cfg.robot_config.robot_type:
-        env_cfg.lerobot_config_path = "../../cfg/train_config_silri_tienkung.json"
+        env_cfg.lerobot_config_path = str(repo_root / "cfg/train_config_silri_tienkung.json")
     elif "so101" in env_cfg.robot_config.robot_type:
-        env_cfg.lerobot_config_path = "../../cfg/train_config_silri_so101.json"
+        env_cfg.lerobot_config_path = str(repo_root / "cfg/train_config_silri_so101.json")
     else:
         raise ValueError(f"Invalid robot type: {env_cfg.robot_config.robot_type}")
-    
-    
+
     config_path = env_cfg.lerobot_config_path
 
     # 使用 draccus.parse 直接加载配置，并通过 args 传入覆盖
