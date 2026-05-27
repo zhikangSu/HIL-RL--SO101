@@ -28,9 +28,10 @@ spacemouse_axis_signs: [1.0, -1.0, -1.0, 1.0, -1.0, -1.0]
 # SO101 leader-arm HIL mode (joint mode, position-mirror).
 # Default is policy-autonomous. The leader mirrors the follower with torque enabled;
 # pulling the leader away by this L2 joint-error threshold switches to takeover.
+# The *_deg names are legacy; SO101 values are LeRobot calibrated joint units.
 leader_so101_error_threshold_deg: 8.0
 leader_so101_gripper_binary_threshold_pct: 15.0
-leader_so101_release_error_threshold_deg: 4.0
+leader_so101_release_error_threshold_deg: 1.0
 leader_so101_release_motion_threshold_deg: 0.75
 leader_so101_min_intervention_s: 0.5
 leader_so101_release_queue_size: 4

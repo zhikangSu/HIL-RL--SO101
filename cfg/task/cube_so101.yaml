@@ -13,11 +13,11 @@ abs_pose_limit_high: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
 reset_joint: [1.71, -100.29, 89.69, 72.60, -4.61, 1.18]
 
 dataset:
-  repo_id: cube_so101_20demo
+  repo_id: cube_so101_99demo
   use_imagenet_stats: false
   # Offline replay should use complete demonstration episodes. The laptop actor
   # does not read this path during deployment; learner uses the server path.
-  root: /home/meow/HIL-RL--SO101/offline_dataset/cube_so101_20demo
+  root: /home/meow/HIL-RL--SO101/offline_dataset/cube_so101_99demo
 
 gripper_penalty: -0.05
 classifier_cfg:
