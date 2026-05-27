@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
 import os
+import time
 
 class HILLogger:
     def __init__(self, log_path="./hil_log", name_dict={"is_intervene", "step", "episode", "time", "success"}, log_interval=100):
@@ -10,7 +11,11 @@ class HILLogger:
         self.name_dict = name_dict
         self.log_interval = log_interval
 
-        # Store time span information
+        # Session-local clock so max_train_time limits the CURRENT run only.
+        # Previous behavior accumulated time across actor restarts via the
+        # persisted hil_log.npy, causing the limit to trigger immediately
+        # whenever the log file already existed.
+        self.session_start = time.time()
         self.current_time_span = 0
         self.first_time = None
         self.last_time = None
@@ -42,16 +47,17 @@ class HILLogger:
         self.log_count = 0
         
     def update_time_span(self):
-        """Update current time span information"""
+        """Wall-clock seconds since this HILLogger instance was created.
+
+        Bound to the current actor session only — does NOT include time from
+        previous runs that wrote to hil_log.npy. The persisted log keeps
+        cross-run history for analysis, but max_train_time checks against
+        per-session elapsed time.
+        """
         if self.log_data_list:
             self.first_time = self.log_data_list[0]["time"]
             self.last_time = self.log_data_list[-1]["time"]
-            self.current_time_span = self.last_time - self.first_time
-        else:
-            self.first_time = None
-            self.last_time = None
-            self.current_time_span = 0
-
+        self.current_time_span = time.time() - self.session_start
         return self.current_time_span
     
     def log(self, message):
