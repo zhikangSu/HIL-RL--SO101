@@ -121,6 +121,10 @@ def on_press(key):
             shared_state.terminate = True
             print("[按键] 收到 Space：确认当前提示/标记本条成功/开始下一条。", flush=True)
             time.sleep(0.5)
+        if str(key) == "'a'" or str(key) == "'A'":
+            shared_state.align_request = True
+            print("[按键] 收到 A：从臂将跟随主臂当前 6-DoF 位姿。", flush=True)
+            time.sleep(0.3)
     except AttributeError:
         pass
 try:
