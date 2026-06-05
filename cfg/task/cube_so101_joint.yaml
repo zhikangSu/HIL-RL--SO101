@@ -1,0 +1,47 @@
+task_name: cube_so101
+# ALTERNATIVE = joint-space action: 5 absolute joint targets (normalized [-1,1]) + binary gripper.
+# No IK, exact 5-DoF match, reproduces the demo wrist motion. The DEFAULT is end-effector mode
+# (task@_global_=cube_so101); use this joint variant for A/B comparison: task@_global_=cube_so101_joint.
+control_mode: joint
+
+# obs-space xyz bound (base_env reads abs_pose_limit_*[:3]). Broad; not an action guard in joint mode.
+abs_pose_limit_low: [-1.0, -1.0, -1.0, 0.0, 0.0, 0.0]
+abs_pose_limit_high: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+
+# Per-joint single-step move cap (calibrated units/tick @ 15 Hz) = joint-mode safety net.
+# Absolute targets + SAC exploration could otherwise jump.
+max_relative_target: [4.0, 4.0, 4.0, 4.0, 4.0, 8.0]
+
+# SO101 reset pose: mean of initial joint state across 103 cube_into_cup episodes.
+reset_joint: [1.71, -100.29, 89.69, 72.60, -4.61, 1.18]
+
+dataset:
+  repo_id: cube_so101_22demo_joint6_state9
+  use_imagenet_stats: false
+  root: /data/users/szk/smolvla_project/data/SO101/hilrl_offline_demos/cube_so101_22demo_joint6_state9
+
+gripper_penalty: -0.05
+classifier_cfg:
+  classifier_keys: ["fixed"]
+  pretrained_encoder_path: null
+  checkpoint_path: /home/meow/HIL-RL--SO101/experiments/cube_so101/outputs/train/2026-05-25/16-47-04_reward-classifier-cube-so101/checkpoints/000500
+  dataset_path: /home/meow/HIL-RL--SO101/offline_dataset/cube_so101
+  reward_pos: 10.0
+  reward_neg: -0.05
+  require_train: false
+  task_name: ${task_name}
+  algorithm: hil-serl
+  target_hz: 15
+  batch_size: 32
+  enable_stacking: false
+  load_classifier: ${load_classifier}
+
+close_gripper: false
+fix_gripper: false
+
+max_episode_length: 300
+# 0 = no wall-clock limit; train until operator stops (Ctrl+C) or saves on demand ('S').
+max_train_time: 0
+
+resume_model: false
+resume_path: None

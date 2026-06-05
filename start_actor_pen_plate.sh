@@ -1,5 +1,6 @@
 #!/bin/bash
-# Laptop-side actor launcher for SiLRI on SO101.
+# Laptop-side actor launcher for SiLRI on SO101 — pen_into_plate task.
+# Faithful copy of start_actor.sh, only task/experiment dir swapped (cube_so101 → pen_plate_so101).
 #
 # Architecture (mirrors docs/silri_so101_laptop_deployment.md §4.7):
 #
@@ -13,8 +14,8 @@
 #       (open in another terminal:
 #        ssh -N -L 50051:localhost:50051 -p 9004 szk@ip.sz2.suanlix.cn)
 #
-# Prereqs to start_actor.sh:
-#   1. Server learner is running and ready (gRPC listening on 50051).
+# Prereqs to start_actor_pen_plate.sh:
+#   1. Server learner is running and ready (gRPC listening on 50051) with task@_global_=pen_plate_so101.
 #   2. SSH tunnel is up in a separate terminal.
 #   3. SO101 follower + leader + 2 cameras connected.
 #
@@ -23,14 +24,14 @@
 set -u
 
 cd "$HOME/HIL-RL--SO101"
-mkdir -p experiments/cube_so101
-cd experiments/cube_so101
+mkdir -p experiments/pen_plate_so101
+cd experiments/pen_plate_so101
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate silri
 
 echo "================================================================"
-echo " SiLRI actor — SO101 cube_into_cup"
+echo " SiLRI actor — SO101 pen_into_plate"
 echo " Ctrl+C exits cleanly"
 echo " Window kept open after exit to inspect stacktrace / log"
 echo "================================================================"
@@ -43,8 +44,8 @@ echo " stdout/stderr tee → $LOG_FILE"
 echo
 
 # ─── Environment ───
-# Force offline + no proxy (matches project rule, see CLAUDE.md).
-unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+# Force offline + no proxy (matches existing actor deployment; HF loads from local cache).
+
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HYDRA_FULL_ERROR=1
@@ -58,7 +59,7 @@ export CUDA_VISIBLE_DEVICES=""
 # ─── Launch actor ───
 # Overrides explained:
 #   robot_type@_global_=so101          load cfg/robot_type/so101.yaml
-#   task@_global_=cube_so101           load cfg/task/cube_so101.yaml
+#   task@_global_=pen_plate_so101      load cfg/task/pen_plate_so101.yaml
 #   intervention_backend=leader_so101  use SO101 policy-first leader takeover mode
 #   use_human_intervention=true        enable intervention wrapper (mandatory for SiLRI)
 #   load_classifier=true               load the trained reward classifier from disk
@@ -72,7 +73,7 @@ export CUDA_VISIBLE_DEVICES=""
 #   fake_env=false                     real hardware
 python ../../actor.py \
     robot_type@_global_=so101 \
-    task@_global_=cube_so101 \
+    task@_global_=pen_plate_so101 \
     intervention_backend=leader_so101 \
     use_human_intervention=true \
     load_classifier=true \

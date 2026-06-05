@@ -15,3 +15,11 @@ scripts
 .DS_Store
 */.DS_Store
 
+
+# --- data / logs / backups (added 2026-06-05, keep repo code-only) ---
+offline_dataset/
+assets/
+*.log
+*.bak_*
+*.bak
+.laptop_state.md

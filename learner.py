@@ -144,6 +144,11 @@ def train_cli(env_cfg):
             cfg = draccus.parse(TrainRLServerPipelineConfig, config_path, args=[f"--policy.type={env_cfg.policy_type}",f"--policy.num_discrete_actions=2"])
         else:
             cfg = draccus.parse(TrainRLServerPipelineConfig, config_path, args=[f"--policy.type={env_cfg.policy_type}"])
+    # SO101 action dim follows control_mode (one JSON serves both): joint = 6 (5 joint
+    # targets + gripper), pose = 4 (xyz EE-delta + gripper). make_policy builds the actor
+    # head from env.features["action"], so size it here before make_policy/validate.
+    if "so101" in env_cfg.robot_config.robot_type and "action" in cfg.env.features:
+        cfg.env.features["action"].shape = (6 if env_cfg.control_mode == "joint" else 4,)
     # Safely override dataset only if provided in env_cfg, converting Hydra DictConfig to DatasetConfig
     if hasattr(env_cfg, "dataset") and env_cfg.dataset is not None:
         try:
@@ -165,6 +170,12 @@ def train_cli(env_cfg):
         cfg.resume = False
         cfg.output_dir = os.getcwd()
     cfg.job_name = env_cfg.task_name
+    cfg.save_online_dataset_on_checkpoint = bool(
+        getattr(env_cfg, "save_online_dataset_on_checkpoint", False)
+    )
+    cfg.save_offline_dataset_on_checkpoint = bool(
+        getattr(env_cfg, "save_offline_dataset_on_checkpoint", False)
+    )
     cfg.validate(config_path)
     cfg.wandb.name = env_cfg.task_name
     if not use_threads(cfg):
@@ -387,7 +398,18 @@ def add_actor_information_and_train(
 
     policy.train()
 
-    push_actor_policy_to_queue(parameters_queue=parameters_queue, policy=policy)
+    defer_initial_policy_push = (
+        bool(getattr(env_cfg, "defer_initial_policy_push_until_offline_pretrain", False))
+        and "silri" in cfg.policy.type
+        and not cfg.resume
+        and cfg.dataset is not None
+    )
+    if defer_initial_policy_push:
+        logging.info(
+            "[LEARNER] Deferring initial SiLRI policy push until offline pretraining is loaded/completed"
+        )
+    else:
+        push_actor_policy_to_queue(parameters_queue=parameters_queue, policy=policy)
 
     last_time_policy_pushed = time.time()
 
@@ -507,6 +529,30 @@ def add_actor_information_and_train(
                 shutdown_event.set()
                 logging.info("[LEARNER] Shutdown event set due to training completion")
             break
+
+        # On-demand checkpoint: operator pressed 'S' on the actor. Save a FULL checkpoint
+        # INCLUDING the replay buffers (force_datasets) so the run can be resumed later.
+        # Does NOT shut down — training continues. The save briefly blocks the loop.
+        if interaction_message is not None and interaction_message.get("save_checkpoint", False):
+            logging.info("[LEARNER] On-demand save_checkpoint from actor; saving full checkpoint with buffers...")
+            try:
+                save_training_checkpoint(
+                    cfg=cfg,
+                    optimization_step=optimization_step,
+                    online_steps=online_steps,
+                    interaction_message=interaction_message,
+                    policy=policy,
+                    optimizers=optimizers,
+                    replay_buffer=replay_buffer,
+                    offline_replay_buffer=offline_replay_buffer,
+                    dataset_repo_id=dataset_repo_id,
+                    fps=fps,
+                    force_datasets=True,
+                )
+                logging.info("[LEARNER] On-demand checkpoint (with buffers) saved.")
+            except Exception as e:
+                logging.error(f"[LEARNER] On-demand checkpoint failed: {e}")
+                traceback.print_exc()
 
         # Wait until the replay buffer has enough samples to start training
         if len(replay_buffer) < online_step_before_learning:
@@ -1113,7 +1159,10 @@ def save_training_checkpoint(
     offline_replay_buffer: ReplayBuffer | None = None,
     dataset_repo_id: str | None = None,
     fps: int = 30,
+    force_datasets: bool = False,
 ) -> None:
+    # force_datasets=True (on-demand 'S' save) exports the replay buffers regardless of
+    # the save_*_dataset_on_checkpoint flags, so the checkpoint is resume-complete.
     # 日志输出当前检查点保存的优化步数，便于调试和监控
     logging.info(f"Checkpoint policy after step {optimization_step}")
     
@@ -1162,37 +1211,41 @@ def save_training_checkpoint(
     # 作用：快速访问最新模型，无需记住具体步数目录
     update_last_checkpoint(checkpoint_dir)
 
-    # 5. 保存在线回放缓冲区为标准数据集（临时逻辑，后续可迁移到机器人端控制）
-    # 数据集保存路径：output_dir/dataset
-    dataset_dir = os.path.join(cfg.output_dir, "dataset")
-    if os.path.exists(dataset_dir) and os.path.isdir(dataset_dir):
-        shutil.rmtree(dataset_dir)
+    # 5. Optionally save online replay buffer as a LeRobot dataset.
+    # This export is useful for full resume/debug, but it is I/O heavy and blocks
+    # the learner loop, delaying policy pushes to the actor during real hardware runs.
+    if force_datasets or getattr(cfg, "save_online_dataset_on_checkpoint", False):
+        dataset_dir = os.path.join(cfg.output_dir, "dataset")
+        if os.path.exists(dataset_dir) and os.path.isdir(dataset_dir):
+            shutil.rmtree(dataset_dir)
 
-    # 确定数据集仓库ID：优先使用传入的dataset_repo_id，未指定则使用环境任务名
-    repo_id_buffer_save = cfg.env.task if dataset_repo_id is None else dataset_repo_id
-    
-    # 将回放缓冲区转换为LeRobot标准数据集格式（支持后续加载复用）
-    replay_buffer.to_lerobot_dataset(
-        repo_id=repo_id_buffer_save,  # 数据集标识
-        fps=fps,  # 与环境帧率一致，保证数据时间同步
-        root=dataset_dir  # 保存根目录
-    )
+        repo_id_buffer_save = cfg.env.task if dataset_repo_id is None else dataset_repo_id
 
-    # 6. 保存离线回放缓冲区为独立数据集
-    if offline_replay_buffer is not None:
+        replay_buffer.to_lerobot_dataset(
+            repo_id=repo_id_buffer_save,
+            fps=fps,
+            root=dataset_dir,
+        )
+    else:
+        logging.info("Skip online replay buffer dataset export at checkpoint.")
+
+    # 6. 保存离线回放缓冲区为独立数据集。
+    # The offline buffer is large and mostly static. Re-exporting it on every
+    # checkpoint dominates I/O and floods logs with parquet conversion output.
+    # Keep one copy for resume/debug, then skip repeated exports.
+    if offline_replay_buffer is not None and (force_datasets or getattr(cfg, "save_offline_dataset_on_checkpoint", False)):
         # 离线数据集保存路径：output_dir/dataset_offline
         dataset_offline_dir = os.path.join(cfg.output_dir, "dataset_offline")
-        
-        # 若离线数据集目录已存在，先删除旧数据
-        if os.path.exists(dataset_offline_dir) and os.path.isdir(dataset_offline_dir):
-            shutil.rmtree(dataset_offline_dir)
 
-        # 保存离线缓冲区为标准数据集（使用离线数据的repo_id标识）
-        offline_replay_buffer.to_lerobot_dataset(
-            cfg.dataset.repo_id,  # 离线数据集的仓库ID（从配置中读取）
-            fps=fps,  # 保持与环境帧率一致
-            root=dataset_offline_dir  # 离线数据集保存根目录
-        )
+        if os.path.exists(dataset_offline_dir) and os.path.isdir(dataset_offline_dir):
+            logging.info("Skip offline replay buffer export; dataset_offline already exists at %s", dataset_offline_dir)
+        else:
+            # 保存离线缓冲区为标准数据集（使用离线数据的repo_id标识）
+            offline_replay_buffer.to_lerobot_dataset(
+                cfg.dataset.repo_id,  # 离线数据集的仓库ID（从配置中读取）
+                fps=fps,  # 保持与环境帧率一致
+                root=dataset_offline_dir  # 离线数据集保存根目录
+            )
 
     # 日志输出保存完成，提示支持恢复训练
     logging.info("Resume training")
@@ -1446,7 +1499,7 @@ def initialize_replay_buffer(
     )
 
 
-OFFLINE_REPLAY_CACHE_VERSION = 1
+OFFLINE_REPLAY_CACHE_VERSION = 2
 
 
 def _get_original_working_dir() -> Path:
@@ -1860,13 +1913,25 @@ def process_interaction_messages(
         dict | None: The last interaction message processed, or None if none were processed
     """
     last_message = None
+    save_requested = False
     while not interaction_message_queue.empty() and not shutdown_event.is_set():
         message = interaction_message_queue.get()
-        last_message = process_interaction_message(
+        processed = process_interaction_message(
             message=message,
             interaction_step_shift=interaction_step_shift,
             wandb_logger=wandb_logger,
         )
+        if processed is not None:
+            last_message = processed
+            if processed.get("save_checkpoint"):
+                save_requested = True
+
+    # An on-demand 'save_checkpoint' request must survive aggregation even if a later
+    # stats message becomes last_message (or it was the only message this round).
+    if save_requested:
+        if last_message is None:
+            last_message = {"Interaction step": interaction_step_shift}
+        last_message["save_checkpoint"] = True
 
     return last_message
 

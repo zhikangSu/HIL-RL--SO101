@@ -1,10 +1,10 @@
-task_name: cube_so101
+task_name: pen_plate_so101
 # DEFAULT = END-EFFECTOR control: position-only EE-delta [dx,dy,dz] + binary gripper, IK via
 # lerobot RobotKinematics (placo). Aligned to the official lerobot SO100/SO101 end-effector
 # controller: position_weight=1.0 + orientation_weight=0.01 (soft hold of the frozen reset
 # orientation), and the EE target anchors to the COMMANDED pose (telescoping, no IK-residual
 # drift). Matches the SiLRI/HIL-SERL EE action style (binary gripper = num_discrete_actions=2).
-# For the joint-space variant (no IK, exact 5-DoF match): task@_global_=cube_so101_joint.
+# Same control convention as cube_so101; only the task / dataset / classifier differ.
 control_mode: pose
 
 # xyz EE bounding box (EE bounds + obs-space bound in pose mode). Matches lerobot
@@ -16,29 +16,30 @@ abs_pose_limit_high: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
 # only part of it would execute each tick). EE action size is bounded by so101_ee_max_delta_m.
 max_relative_target: null
 
-# SO101 reset pose: mean of initial joint state across 103 cube_into_cup episodes.
-reset_joint: [1.71, -100.29, 89.69, 72.60, -4.61, 1.18]
+# SO101 reset pose: mean of initial joint state across the 20 pen_into_plate demo episodes
+# (so101_cube_into_plate_v1, 480x505 cropped vertical view).
+reset_joint: [0.4, -101.93, 91.3, 72.26, -4.93, 0.63]
 
 dataset:
-  repo_id: cube_so101_20demo_ee_delta_state9_h2
+  repo_id: pen_plate_so101_20demo_ee_delta_state9_h2
   use_imagenet_stats: false
   # Offline replay should use complete demonstration episodes. The laptop actor
   # does not read this path during deployment; learner uses the server path.
-  root: /data/users/szk/smolvla_project/data/SO101/hilrl_offline_demos/cube_so101_20demo_ee_delta_state9_h2
+  root: /data/users/szk/smolvla_project/data/SO101/hilrl_offline_demos/pen_plate_so101_20demo_ee_delta_state9_h2
 
 gripper_penalty: -0.05
 classifier_cfg:
-  # Reward classifier v2 synced from the GPU server on 2026-05-26.
-  # Trained 2026-05-25 for the first real SiLRI run.
+  # Reward classifier trained 2026-06-03 on pen_plate_so101 (480x505 cropped vertical view),
+  # 18 train ep / 2 holdout (5,15), 540/540 success/failure frames, 500 steps.
   classifier_keys: ["fixed"]
   pretrained_encoder_path: null  # using helper2424/resnet10 from HF cache, no .pkl
-  checkpoint_path: /home/meow/HIL-RL--SO101/experiments/cube_so101/outputs/train/2026-06-03/16-45-07_reward-classifier-cube-so101/checkpoints/000500
+  checkpoint_path: /home/meow/HIL-RL--SO101/experiments/pen_plate_so101/outputs/train/2026-06-03/23-18-28_reward-classifier-pen-plate-so101/checkpoints/000500
   # Base prefix for reward-classifier frame datasets:
   # <dataset_path>_success and <dataset_path>_failure.
-  dataset_path: /home/meow/HIL-RL--SO101/offline_dataset/cube_so101
+  dataset_path: /home/meow/HIL-RL--SO101/offline_dataset/pen_plate_so101
   reward_pos: 10.0
   reward_neg: -0.05
-  require_train: false   # do not fine-tune classifier during RL (holdout 91.7% is already good enough for first run)
+  require_train: false   # do not fine-tune classifier during RL
   task_name: ${task_name}
   algorithm: hil-serl
   target_hz: 15
@@ -50,8 +51,9 @@ classifier_cfg:
 close_gripper: false
 fix_gripper: false
 
-# 15 Hz * 20s = 300 steps. cube task average duration in dataset is ~16.7s @ 30fps.
-max_episode_length: 300
+# 15 Hz * ~16.7s = 250 steps. pen_into_plate demo duration: mean 10.8s / max 13.0s @30fps;
+# 250 gives headroom over the max demo for slower early-learning policy execution.
+max_episode_length: 250
 # 0 = no wall-clock limit; train until operator stops (Ctrl+C) or saves on demand ('S').
 max_train_time: 0
 

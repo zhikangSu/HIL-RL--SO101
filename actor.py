@@ -125,6 +125,19 @@ def on_press(key):
             shared_state.align_request = True
             print("[按键] 收到 A：从臂将跟随主臂当前 6-DoF 位姿。", flush=True)
             time.sleep(0.3)
+        if str(key) == "'t'" or str(key) == "'T'":
+            shared_state.leader_manual_takeover = not shared_state.leader_manual_takeover
+            state = "开启" if shared_state.leader_manual_takeover else "结束"
+            print(f"[按键] 收到 T：SO101 主臂人工接管已{state}。", flush=True)
+            time.sleep(0.3)
+        if str(key) == "'d'" or str(key) == "'D'":
+            shared_state.discard_episode = True
+            print("[按键] 收到 D：本条作废——立即结束且不发送给 learner（场景异常，如笔筒被碰倒）。", flush=True)
+            time.sleep(0.3)
+        if str(key) == "'s'" or str(key) == "'S'":
+            shared_state.save_checkpoint_request = True
+            print("[按键] 收到 S：已请求 learner 保存完整 checkpoint（含 replay buffer，可用于续接）；保存时 learner 会短暂卡顿。", flush=True)
+            time.sleep(0.3)
     except AttributeError:
         pass
 try:
@@ -154,6 +167,11 @@ def actor_cli(env_cfg):
             cfg = draccus.parse(TrainRLServerPipelineConfig, lerobot_config_path, args=[f"--policy.type={env_cfg.policy_type}", f"--policy.num_discrete_actions=2"])
         else:
             cfg = draccus.parse(TrainRLServerPipelineConfig, lerobot_config_path, args=[f"--policy.type={env_cfg.policy_type}"])
+    # SO101 action dim follows control_mode (must match the learner): joint = 6 (5 joint
+    # targets + gripper), pose = 4 (xyz EE-delta + gripper). Size the action feature so the
+    # actor's policy matches the learner's pushed weights.
+    if "so101" in env_cfg.robot_config.robot_type and "action" in cfg.env.features:
+        cfg.env.features["action"].shape = (6 if env_cfg.control_mode == "joint" else 4,)
 
     if env_cfg.dataset is not None:
         dataset_obj = OmegaConf.to_object(env_cfg.dataset)
@@ -343,7 +361,21 @@ def act_with_policy(
             cfg=cfg.policy,
             env_cfg=cfg.env,
         )
-        update_policy_parameters(policy=policy, parameters_queue=parameters_queue, device=device)
+        if bool(getattr(env_cfg, "wait_for_initial_policy_parameters", False)):
+            if not wait_for_initial_policy_parameters(
+                policy=policy,
+                parameters_queue=parameters_queue,
+                device=device,
+                timeout_s=180.0,
+            ):
+                logging.error("[ACTOR] Initial policy parameters were not received; aborting actor rollout.")
+                print(
+                    "[错误] 180 秒内没有收到 learner 推送的 policy 参数，actor 未开始实机 rollout。",
+                    flush=True,
+                )
+                return
+        else:
+            update_policy_parameters(policy=policy, parameters_queue=parameters_queue, device=device)
     except Exception as e:
         print(f"Error creating policy: {e}")
         return
@@ -397,7 +429,9 @@ def act_with_policy(
             if policy_action_smoothing_alpha < 1.0:
                 smooth_dim = min(policy.continuous_action_dim, policy_action.shape[0])
                 smoothed_action = policy_action.copy()
-                if prev_policy_action is not None and prev_policy_action.shape == policy_action.shape:
+                if prev_policy_action is None or prev_policy_action.shape != policy_action.shape:
+                    prev_policy_action = np.zeros_like(policy_action)
+                if prev_policy_action.shape == policy_action.shape:
                     smoothed_action[:smooth_dim] = (
                         policy_action_smoothing_alpha * policy_action[:smooth_dim]
                         + (1.0 - policy_action_smoothing_alpha) * prev_policy_action[:smooth_dim]
@@ -455,8 +489,16 @@ def act_with_policy(
         hil_logger.log({"is_intervene": episode_intervention, "step": time_step, "episode": episode, "time": time.time(), "success": terminated})
         if time_step == 1 or time_step % status_print_interval == 0 or done:
             mode = "人工接管" if episode_intervention else "policy自主"
+            action_arr = np.asarray(action, dtype=np.float32).reshape(-1)
+            action_head = action_arr[: min(3, action_arr.shape[0])]
+            # In joint mode the leading dims are joint targets, in pose mode they are xyz EE-delta.
+            head_label = "a_j0-2" if env_cfg.control_mode == "joint" else "a_xyz"
+            action_norm = float(np.linalg.norm(action_head)) if action_head.size else 0.0
+            gripper_value = float(action_arr[-1]) if action_arr.size else 0.0
             print(
-                f"[运行中] 第 {episode + 1} 条 | step={episode_total_steps} | 模式={mode} | reward={float(reward):.2f}",
+                f"[运行中] 第 {episode + 1} 条 | step={episode_total_steps} | 模式={mode} "
+                f"| {head_label}={np.round(action_head, 3).tolist()} | |a3|={action_norm:.3f} "
+                f"| grip={gripper_value:.0f} | reward={float(reward):.2f}",
                 flush=True,
             )
         # 存储当前步的过渡数据
@@ -481,17 +523,21 @@ def act_with_policy(
         
 
         obs = next_obs
-        if done:
+        if done or shared_state.discard_episode:
+            # Voided episode (operator pressed 'D'): end now and drop the buffered
+            # transitions instead of sending them to the learner.
+            voided = bool(shared_state.discard_episode)
+            shared_state.discard_episode = False
             logging.info(f"[ACTOR] Global step {interaction_step}: Episode reward: {sum_reward_episode}")
-            end_reason = "成功" if terminated else "超时" if truncated else "结束"
+            end_reason = "作废" if voided else ("成功" if terminated else "超时" if truncated else "结束")
 
             # 更新网络参数
             update_policy_parameters(policy=policy, parameters_queue=parameters_queue, device=device)
 
-
-            # 将当前episode收集的过渡数据推送到transitions_queu
-            if len(list_transition_to_send_to_learner) > 0:
-
+            # 将当前 episode 收集的过渡数据推送到 transitions_queue；作废的本条直接丢弃，不发给 learner
+            if voided:
+                print("[本条作废] 该 episode 数据已丢弃，未发送给 learner。", flush=True)
+            elif len(list_transition_to_send_to_learner) > 0:
                 push_transitions_to_transport_queue(
                     transitions=list_transition_to_send_to_learner,
                     transitions_queue=transitions_queue,
@@ -506,26 +552,30 @@ def act_with_policy(
             intervention_rate = 0.0
             time_step = 0
             completed_episode = episode + 1
-            episode += 1
+            # Don't count a voided attempt as a collected episode; the operator redoes it.
+            if not voided:
+                episode += 1
             if episode_total_steps > 0:
                 intervention_rate = episode_intervention_steps / episode_total_steps
+            sent_note = "数据已丢弃" if voided else "已送入发送队列"
             print(
                 f"\n[本条结束] 第 {completed_episode} 条{end_reason}，"
-                f"总步数={episode_total_steps}，介入率={intervention_rate:.1%}。已送入发送队列，准备重置环境。",
+                f"总步数={episode_total_steps}，介入率={intervention_rate:.1%}。{sent_note}，准备重置环境。",
                 flush=True,
             )
-            # Send the episode statistics (reward, intervention rate, etc.) to the learner through interactions_queue
-            interactions_queue.put(
-                python_object_to_bytes(
-                    {
-                        "Episodic reward": sum_reward_episode,
-                        "Interaction step": interaction_step,
-                        "Episode intervention": int(episode_intervention),
-                        "Intervention rate": intervention_rate,
-                        **stats,
-                    }
+            # Send the episode statistics to the learner; skip voided episodes to keep metrics clean.
+            if not voided:
+                interactions_queue.put(
+                    python_object_to_bytes(
+                        {
+                            "Episodic reward": sum_reward_episode,
+                            "Interaction step": interaction_step,
+                            "Episode intervention": int(episode_intervention),
+                            "Intervention rate": intervention_rate,
+                            **stats,
+                        }
+                    )
                 )
-            )
 
 
             # Reset the counters for the current episode
@@ -533,16 +583,34 @@ def act_with_policy(
             episode_intervention = False
             episode_intervention_steps = 0
             episode_total_steps = 0
-            print("[环境重置] 请摆好方块和杯子；从臂回到 reset 后按 Space 开始下一条。", flush=True)
+            if "so101" in env_cfg.robot_config.robot_type:
+                print("[环境重置] 请摆好方块和杯子；接下来进入 SO101 对齐阶段，按 A 对齐，按 Space 开始下一条。", flush=True)
+            else:
+                print("[环境重置] 请摆好方块和杯子；从臂回到 reset 后按 Space 开始下一条。", flush=True)
             obs, info = online_env.reset()
+            # Clear any 'D' pressed during the reset wait so the fresh episode isn't voided on step 1.
+            shared_state.discard_episode = False
             print(
                 f"\n[开始录制] 第 {episode + 1} 条开始：默认由 policy 控制从臂；需要纠偏时直接操作主臂接管。",
                 flush=True,
             )
 
-       # Add the time span check at the end of the loop
+        # On-demand checkpoint: operator pressed 'S' -> ask the learner to save a full
+        # checkpoint (model + replay buffers) so the run can be resumed later.
+        if shared_state.save_checkpoint_request:
+            shared_state.save_checkpoint_request = False
+            try:
+                interactions_queue.put(
+                    python_object_to_bytes({"save_checkpoint": True, "Interaction step": interaction_step})
+                )
+                print("[checkpoint] 已通知 learner 保存完整 checkpoint（含 buffer）。", flush=True)
+            except Exception as e:
+                logging.error(f"[ACTOR] Failed to send save_checkpoint request: {e}")
+
+        # Wall-clock training time limit. max_train_time <= 0 disables it (train until
+        # the operator stops with Ctrl+C / saves on demand with 'S').
         current_time_span = hil_logger.update_time_span()
-        if current_time_span >= env_cfg.max_train_time:  
+        if env_cfg.max_train_time and env_cfg.max_train_time > 0 and current_time_span >= env_cfg.max_train_time:
             logging.info(f"[ACTOR] Time span reached {current_time_span} seconds, shut down all processes.")
             # Send the training complete message to the learner
             try:
@@ -736,18 +804,50 @@ def send_transitions(
             port=cfg.policy.actor_learner_config.learner_port,
         )
 
-    try:
-        learner_client.SendTransitions(
-            transitions_stream(
-                shutdown_event, transitions_queue, cfg.policy.actor_learner_config.queue_get_timeout
+    # [reconnect-fix 2026-06-04] 原来这里 gRPC 异常直接 exit(-1) 会永久杀死发送线程:
+    # SSH 隧道一抖(Socket closed)发送线程就死、再不重连, 此后所有接管 transition 只进本地
+    # 死队列、永远发不到 learner → learner 的 new_offline_transition_num 冻结 → expert_training 不再触发.
+    # 改为捕获 grpc.RpcError 后重建 client 重连, 直到 shutdown_event 被置位(对齐非致命行为).
+    while not shutdown_event.is_set():
+        try:
+            learner_client.SendTransitions(
+                transitions_stream(
+                    shutdown_event, transitions_queue, cfg.policy.actor_learner_config.queue_get_timeout
+                )
             )
-        )
-    except Exception as e:
-        traceback.print_exc()
-        logging.error(f"[ACTOR] gRPC error: {e}")
-        exit(-1)
-    # except grpc.RpcError as e:
-    #     logging.error(f"[ACTOR] gRPC error: {e}")
+            break  # 正常结束(shutdown), 退出重连循环
+        except grpc.RpcError as e:
+            logging.error(f"[ACTOR] SendTransitions gRPC 中断, 2s 后重连: {e}")
+            try:
+                with open(os.path.join(os.path.expanduser("~/HIL-RL--SO101"), "actor_send_errors.log"), "a") as _ef:
+                    _ef.write(f"{time.time():.0f} SendTransitions reconnect: {e}\n")
+            except Exception:
+                pass
+            try:
+                if grpc_channel is not None:
+                    grpc_channel.close()
+            except Exception:
+                pass
+            if shutdown_event.wait(2.0):
+                break
+            learner_client, grpc_channel = learner_service_client(
+                host=cfg.policy.actor_learner_config.learner_host,
+                port=cfg.policy.actor_learner_config.learner_port,
+            )
+        except Exception as e:
+            traceback.print_exc()
+            logging.error(f"[ACTOR] SendTransitions 非 gRPC 异常, 2s 后重连: {e}")
+            try:
+                if grpc_channel is not None:
+                    grpc_channel.close()
+            except Exception:
+                pass
+            if shutdown_event.wait(2.0):
+                break
+            learner_client, grpc_channel = learner_service_client(  # 同样重建 channel(否则 closed channel 会死循环)
+                host=cfg.policy.actor_learner_config.learner_host,
+                port=cfg.policy.actor_learner_config.learner_port,
+            )
 
     logging.info("[ACTOR] Finished streaming transitions")
 
@@ -886,6 +986,26 @@ def update_policy_parameters(policy, parameters_queue: Queue, device):
             )
             policy.discrete_actor.load_state_dict(discrete_actor_state_dict)
             logging.info("[ACTOR] Loaded discrete actor parameters from Learner.")
+        return True
+    return False
+
+
+def wait_for_initial_policy_parameters(
+    policy,
+    parameters_queue: Queue,
+    device,
+    timeout_s: float = 180.0,
+    poll_s: float = 0.2,
+) -> bool:
+    """Block the hardware rollout until the learner has provided actor weights."""
+    deadline = time.time() + timeout_s
+    print("[等待参数] 正在等待 learner 推送 BC/online policy 参数...", flush=True)
+    while time.time() < deadline:
+        if update_policy_parameters(policy=policy, parameters_queue=parameters_queue, device=device):
+            print("[等待参数] 已加载 learner policy 参数，开始实机 rollout。", flush=True)
+            return True
+        time.sleep(poll_s)
+    return False
 
 
 #################################################
