@@ -138,6 +138,10 @@ def on_press(key):
             shared_state.save_checkpoint_request = True
             print("[按键] 收到 S：已请求 learner 保存完整 checkpoint（含 replay buffer，可用于续接）；保存时 learner 会短暂卡顿。", flush=True)
             time.sleep(0.3)
+        if str(key) == "'m'" or str(key) == "'M'":
+            shared_state.print_pos_request = True
+            print("[按键] 收到 M：将输出当前末端 ee 位置（用于标定 reward 的 cube/plate 目标点）。", flush=True)
+            time.sleep(0.3)
     except AttributeError:
         pass
 try:
