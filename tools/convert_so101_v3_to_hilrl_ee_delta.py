@@ -118,6 +118,11 @@ def build_features() -> dict[str, dict[str, Any]]:
             "shape": (3, 128, 128),
             "names": ["channels", "height", "width"],
         },
+        "observation.images.fixed_1": {
+            "dtype": "video",
+            "shape": (3, 128, 128),
+            "names": ["channels", "height", "width"],
+        },
         "observation.state": {
             "dtype": "float32",
             "shape": (9,),
@@ -270,8 +275,15 @@ def convert(args: argparse.Namespace) -> None:
                 int(row["videos/observation.images.wrist/chunk_index"]),
                 int(row["videos/observation.images.wrist/file_index"]),
             )
+            fixed_1_video = source_video_path(
+                source,
+                "observation.images.fixed_1",
+                int(row["videos/observation.images.fixed_1/chunk_index"]),
+                int(row["videos/observation.images.fixed_1/file_index"]),
+            )
             fixed_base_ts = float(row["videos/observation.images.fixed/from_timestamp"])
             wrist_base_ts = float(row["videos/observation.images.wrist/from_timestamp"])
+            fixed_1_base_ts = float(row["videos/observation.images.fixed_1/from_timestamp"])
             ep_timestamps = ep_df["timestamp"].to_numpy(dtype=np.float64)
             task = episode_task(row, default_task)
 
@@ -290,6 +302,12 @@ def convert(args: argparse.Namespace) -> None:
                     tolerance_s=args.decode_tolerance_s,
                     image_size=(128, 128),
                 )
+                fixed_1 = decode_resized_frames(
+                    fixed_1_video,
+                    fixed_1_base_ts + ep_timestamps[sl],
+                    tolerance_s=args.decode_tolerance_s,
+                    image_size=(128, 128),
+                )
 
                 for local_i in range(end - start):
                     i = start + local_i
@@ -297,6 +315,7 @@ def convert(args: argparse.Namespace) -> None:
                         {
                             "observation.images.fixed": fixed[local_i],
                             "observation.images.wrist": wrist[local_i],
+                            "observation.images.fixed_1": fixed_1[local_i],
                             "observation.state": state9[i],
                             "action": action[i],
                             "next.reward": np.array([rewards[i]], dtype=np.float32),
